@@ -1,0 +1,163 @@
+# =============================================================================
+# Python
+# =============================================================================
+venv/
+env/
+.venv/
+.env/
+ENV/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python packaging
+dist/
+build/
+eggs/
+parts/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+wheels/
+
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Thumbnails
+Thumbs.db
+ehthumbs.db
+
+# =============================================================================
+# Xcode
+# =============================================================================
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# =============================================================================
+# IDE & Editors
+# =============================================================================
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+
+# =============================================================================
+# Logs & Temporary Files
+# =============================================================================
+*.log
+nohup.out
+*.tmp
+*.temp
+*.bak
+*.backup
+/tmp/
+
+# =============================================================================
+# Distribution & Archives
+# =============================================================================
+*.zip
+*.tar.gz
+*.rar
+*.dmg
+
+# =============================================================================
+# ML Models & Cache (users download their own)
+# =============================================================================
+.cache/
+*.mlmodel
+*.mlpackage/
+models/
+*.onnx
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Hugging Face cache
+.huggingface/
+
+# =============================================================================
+# Environment & Secrets (should never be committed)
+# =============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+secrets.json
+credentials.json
+
+# =============================================================================
+# Audio Files (test recordings)
+# =============================================================================
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.ogg
+*.flac
+
+# =============================================================================
+# Misc
+# =============================================================================
+*.orig
+*.rej
+.history/
+.ionide/

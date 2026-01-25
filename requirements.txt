@@ -1,0 +1,2 @@
+# VoiceScribe Python dependencies
+mlx-audio
