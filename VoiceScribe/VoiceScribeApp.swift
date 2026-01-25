@@ -225,12 +225,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        DispatchQueue.main.async {
-            self.appState.isRecording = true
-        }
+        // Check/request microphone permission only when user tries to record
+        audioRecorder?.requestMicrophonePermission { [weak self] granted in
+            guard granted else {
+                print("Microphone permission not granted")
+                return
+            }
 
-        audioRecorder?.startRecording(deviceID: appState.selectedInputDevice)
-        updateStatusBarIcon(recording: true)
+            DispatchQueue.main.async {
+                self?.appState.isRecording = true
+            }
+
+            self?.audioRecorder?.startRecording(deviceID: self?.appState.selectedInputDevice)
+            self?.updateStatusBarIcon(recording: true)
+        }
     }
 
     func stopRecording() {

@@ -15,12 +15,13 @@ class KeyboardMonitor {
     init() {}
 
     func start() {
-        // Request accessibility permissions
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
+        // Check accessibility permissions silently - never prompt automatically
+        let trusted = AXIsProcessTrusted()
 
         if !trusted {
-            print("Accessibility permissions required. Please grant access in System Preferences > Security & Privacy > Privacy > Accessibility")
+            print("Accessibility permissions required. Please grant access in System Settings > Privacy & Security > Accessibility")
+            // Don't auto-prompt - user can enable via Settings if needed
+            return
         }
 
         // Create event tap for key events

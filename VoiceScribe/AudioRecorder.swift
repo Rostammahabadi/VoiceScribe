@@ -16,11 +16,29 @@ class AudioRecorder: NSObject {
     }
 
     private func setupAudioSession() {
-        // Request microphone permission
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            if !granted {
-                print("Microphone access not granted")
+        // Check microphone permission silently - don't auto-prompt
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        if status != .authorized {
+            print("Microphone permission status: \(status.rawValue)")
+        }
+        // Permission will be requested when user first tries to record
+    }
+
+    func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+        switch status {
+        case .authorized:
+            completion(true)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async {
+                    completion(granted)
+                }
             }
+        default:
+            completion(false)
         }
     }
 

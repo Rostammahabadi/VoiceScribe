@@ -73,6 +73,7 @@ struct GeneralSettingsView: View {
 
 struct ShortcutSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @State private var hasAccessibilityPermission = AXIsProcessTrusted()
 
     var body: some View {
         Form {
@@ -89,23 +90,42 @@ struct ShortcutSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Accessibility Permission Required")
-                        .font(.headline)
+            // Only show if accessibility permission is missing
+            if !hasAccessibilityPermission {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Accessibility Permission Required")
+                                .font(.headline)
+                        }
 
-                    Text("VoiceScribe needs accessibility permissions to detect keyboard shortcuts globally.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        Text("VoiceScribe needs accessibility permissions to detect keyboard shortcuts globally.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
 
-                    Button("Open Accessibility Settings") {
-                        openAccessibilitySettings()
+                        Button("Open Accessibility Settings") {
+                            openAccessibilitySettings()
+                        }
+                    }
+                }
+            } else {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Accessibility permission granted")
+                            .foregroundColor(.secondary)
                     }
                 }
             }
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            hasAccessibilityPermission = AXIsProcessTrusted()
+        }
     }
 
     private func openAccessibilitySettings() {
