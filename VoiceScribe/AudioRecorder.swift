@@ -6,33 +6,38 @@ class AudioRecorder: NSObject {
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
+    private var isCapturing = false
+    private var engineReady = false
+    private var micPermissionGranted = false
+    private var cachedFormat: AVAudioFormat?
+    private let recordingLock = NSLock()
 
     var onRecordingComplete: ((URL) -> Void)?
     var onError: ((Error) -> Void)?
 
     override init() {
         super.init()
-        setupAudioSession()
-    }
-
-    private func setupAudioSession() {
-        // Check microphone permission silently - don't auto-prompt
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-
-        if status != .authorized {
-            print("Microphone permission status: \(status.rawValue)")
-        }
-        // Permission will be requested when user first tries to record
     }
 
     func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
+        if micPermissionGranted {
+            completion(true)
+            return
+        }
+
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
 
         switch status {
         case .authorized:
+            micPermissionGranted = true
+            prepareEngine()
             completion(true)
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                if granted {
+                    self?.micPermissionGranted = true
+                    self?.prepareEngine()
+                }
                 DispatchQueue.main.async {
                     completion(granted)
                 }
@@ -42,79 +47,122 @@ class AudioRecorder: NSObject {
         }
     }
 
+    /// Pre-warms the audio engine so recording starts instantly on key press.
+    /// Creates the engine, installs the tap, and prepares hardware — but does NOT start.
+    func prepareEngine() {
+        guard !engineReady else { return }
+
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        cachedFormat = inputFormat
+
+        // Install a persistent tap that writes when isCapturing is true
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            self.recordingLock.lock()
+            let capturing = self.isCapturing
+            let file = self.audioFile
+            self.recordingLock.unlock()
+
+            guard capturing, let file = file else { return }
+            do {
+                try file.write(from: buffer)
+            } catch {
+                print("Error writing audio buffer: \(error)")
+            }
+        }
+
+        // Prepare pre-allocates audio hardware resources (fast start later)
+        engine.prepare()
+        audioEngine = engine
+        engineReady = true
+        print("Audio engine prepared and ready")
+    }
+
     func startRecording(deviceID: AudioDeviceID? = nil) {
-        // Stop any existing recording
-        stopRecording()
+        if !engineReady {
+            prepareEngine()
+        }
 
-        do {
-            audioEngine = AVAudioEngine()
-            guard let audioEngine = audioEngine else { return }
+        guard let engine = audioEngine else {
+            print("No audio engine available")
+            return
+        }
 
-            let inputNode = audioEngine.inputNode
-
-            // Create temp file for recording
-            let tempDir = FileManager.default.temporaryDirectory
-            let fileName = "voicescribe_\(UUID().uuidString).wav"
-            recordingURL = tempDir.appendingPathComponent(fileName)
-
-            guard let url = recordingURL else { return }
-
-            // Get the input format
-            let inputFormat = inputNode.outputFormat(forBus: 0)
-
-            // Create audio file with the same format
-            let settings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: inputFormat.sampleRate,
-                AVNumberOfChannelsKey: inputFormat.channelCount,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false
-            ]
-
-            audioFile = try AVAudioFile(forWriting: url, settings: settings)
-
-            // Install tap on input node
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, time in
-                do {
-                    try self?.audioFile?.write(from: buffer)
-                } catch {
-                    print("Error writing audio buffer: \(error)")
+        // Start engine (fast after prepare/pause)
+        if !engine.isRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("Error starting audio engine: \(error)")
+                // Try full reset
+                engineReady = false
+                prepareEngine()
+                guard let engine = audioEngine else { return }
+                do { try engine.start() } catch {
+                    print("Failed to start audio engine after reset: \(error)")
+                    onError?(error)
+                    return
                 }
             }
+        }
 
-            // Start the engine
-            try audioEngine.start()
+        let inputFormat = cachedFormat ?? engine.inputNode.outputFormat(forBus: 0)
+
+        // Create temp file for recording
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = "voicescribe_\(UUID().uuidString).wav"
+        let url = tempDir.appendingPathComponent(fileName)
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: inputFormat.sampleRate,
+            AVNumberOfChannelsKey: inputFormat.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: settings)
+
+            recordingLock.lock()
+            recordingURL = url
+            audioFile = file
+            isCapturing = true
+            recordingLock.unlock()
+
             print("Recording started")
-
         } catch {
-            print("Error starting recording: \(error)")
+            print("Error creating audio file: \(error)")
             onError?(error)
         }
     }
 
     func stopRecording() {
-        guard let audioEngine = audioEngine else { return }
+        recordingLock.lock()
+        isCapturing = false
+        audioFile = nil  // closes the file
+        let url = recordingURL
+        recordingURL = nil
+        recordingLock.unlock()
 
-        // Remove tap and stop engine
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-
-        // Close audio file
-        audioFile = nil
-        self.audioEngine = nil
+        // Pause engine (keeps it prepared for fast restart, releases mic indicator)
+        audioEngine?.pause()
 
         // Notify completion
-        if let url = recordingURL {
+        if let url = url {
             print("Recording stopped, file saved to: \(url.path)")
             onRecordingComplete?(url)
         }
-
-        recordingURL = nil
     }
 
     func isRecording() -> Bool {
-        return audioEngine?.isRunning ?? false
+        recordingLock.lock()
+        let capturing = isCapturing
+        recordingLock.unlock()
+        return capturing
     }
 }
 

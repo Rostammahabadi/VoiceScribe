@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var transcriptionService: TranscriptionService?
     var pythonProcess: Process?
     var settingsWindow: NSWindow?
+    var clickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -96,6 +97,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Observe recording state
         audioRecorder?.onRecordingComplete = { [weak self] audioURL in
             self?.handleRecordingComplete(audioURL: audioURL)
+        }
+
+        // Pre-warm: request mic permission early so engine is ready before first key press
+        audioRecorder?.requestMicrophonePermission { granted in
+            if granted {
+                print("Microphone permission granted, audio engine pre-warmed")
+            }
         }
     }
 
@@ -211,11 +219,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func togglePopover() {
         if let button = statusBarItem.button {
             if popover.isShown {
-                popover.performClose(nil)
+                closePopover()
             } else {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 NSApp.activate(ignoringOtherApps: true)
+
+                // Monitor for clicks outside the popover to dismiss it
+                clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                    self?.closePopover()
+                }
             }
+        }
+    }
+
+    private func closePopover() {
+        popover.performClose(nil)
+        if let monitor = clickMonitor {
+            NSEvent.removeMonitor(monitor)
+            clickMonitor = nil
         }
     }
 
@@ -225,20 +246,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Check/request microphone permission only when user tries to record
-        audioRecorder?.requestMicrophonePermission { [weak self] granted in
-            guard granted else {
-                print("Microphone permission not granted")
-                return
-            }
-
-            DispatchQueue.main.async {
-                self?.appState.isRecording = true
-            }
-
-            self?.audioRecorder?.startRecording(deviceID: self?.appState.selectedInputDevice)
-            self?.updateStatusBarIcon(recording: true)
-        }
+        appState.isRecording = true
+        audioRecorder?.startRecording(deviceID: appState.selectedInputDevice)
+        updateStatusBarIcon(recording: true)
     }
 
     func stopRecording() {
@@ -252,7 +262,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleRecordingComplete(audioURL: URL) {
-        transcriptionService?.transcribe(audioURL: audioURL) { [weak self] result in
+        let cleanup = appState.textCleanupEnabled
+        transcriptionService?.transcribe(audioURL: audioURL, cleanup: cleanup) { [weak self] result in
             DispatchQueue.main.async {
                 self?.appState.isTranscribing = false
 

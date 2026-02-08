@@ -60,6 +60,11 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(autoCopyEnabled, forKey: "autoCopyEnabled")
         }
     }
+    @Published var textCleanupEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(textCleanupEnabled, forKey: "textCleanupEnabled")
+        }
+    }
 
     @Published var availableInputDevices: [AudioDevice] = []
 
@@ -80,6 +85,7 @@ class AppState: ObservableObject {
 
         autoTypeEnabled = UserDefaults.standard.object(forKey: "autoTypeEnabled") as? Bool ?? true
         autoCopyEnabled = UserDefaults.standard.object(forKey: "autoCopyEnabled") as? Bool ?? true
+        textCleanupEnabled = UserDefaults.standard.object(forKey: "textCleanupEnabled") as? Bool ?? true
     }
 
     func refreshInputDevices() {

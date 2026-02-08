@@ -13,6 +13,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 import signal
+import urllib.request
 
 # Global model instance
 model = None
@@ -32,6 +33,51 @@ def load_parakeet_model():
     except Exception as e:
         print(f"Error loading model: {e}", flush=True)
         return False
+
+def cleanup_text(text: str) -> str:
+    """Clean up transcribed text using nemotron-mini via local Ollama.
+
+    Removes speech artifacts (um, uh, like, you know, etc.) and fixes
+    minor grammar issues while preserving the original meaning.
+    Returns the original text if Ollama is unavailable or the text is already clean.
+    """
+    if not text or not text.strip():
+        return text
+
+    prompt = (
+        "Clean up the following transcribed speech. Remove filler words like "
+        "'um', 'uh', 'like', 'you know', 'so', 'actually', 'basically', "
+        "'I mean', 'right', 'well' when they are used as speech fillers. "
+        "Fix minor grammar issues and ensure the text reads naturally. "
+        "Do NOT change the meaning, tone, or content. If the text is already "
+        "clear and well-formed, return it exactly as-is. "
+        "Return ONLY the cleaned text with no explanations, no quotes, no prefixes.\n\n"
+        f"Text: {text}"
+    )
+
+    payload = json.dumps({
+        "model": "nemotron-mini",
+        "prompt": prompt,
+        "stream": False,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "http://localhost:11434/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            cleaned = result.get("response", "").strip()
+            if cleaned:
+                return cleaned
+    except Exception as e:
+        print(f"Ollama cleanup failed, using original text: {e}", flush=True)
+
+    return text
+
 
 def transcribe_audio(audio_path: str) -> dict:
     """Transcribe audio file using the loaded Parakeet model."""
@@ -84,6 +130,9 @@ class TranscriptionHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path == '/transcribe':
+            query_params = parse_qs(parsed.query)
+            do_cleanup = query_params.get('cleanup', ['false'])[0].lower() == 'true'
+
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
 
@@ -94,6 +143,9 @@ class TranscriptionHandler(BaseHTTPRequestHandler):
 
             try:
                 result = transcribe_audio(temp_path)
+                if do_cleanup and result.get("text") and not result.get("error"):
+                    result["original_text"] = result["text"]
+                    result["text"] = cleanup_text(result["text"])
                 self.send_json_response(result)
             finally:
                 # Clean up temp file

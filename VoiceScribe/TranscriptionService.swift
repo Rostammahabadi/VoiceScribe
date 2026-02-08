@@ -53,8 +53,9 @@ class TranscriptionService {
         task.resume()
     }
 
-    func transcribe(audioURL: URL, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
-        guard let url = URL(string: "\(baseURL)/transcribe") else {
+    func transcribe(audioURL: URL, cleanup: Bool = false, completion: @escaping (Result<String, TranscriptionError>) -> Void) {
+        let endpoint = cleanup ? "\(baseURL)/transcribe?cleanup=true" : "\(baseURL)/transcribe"
+        guard let url = URL(string: endpoint) else {
             completion(.failure(.serverNotAvailable))
             return
         }

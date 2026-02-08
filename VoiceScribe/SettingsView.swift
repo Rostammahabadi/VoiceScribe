@@ -42,6 +42,9 @@ struct GeneralSettingsView: View {
                 Toggle("Auto-type transcription", isOn: $appState.autoTypeEnabled)
                     .help("Automatically type the transcribed text at the cursor position")
 
+                Toggle("Clean up speech (via Ollama)", isOn: $appState.textCleanupEnabled)
+                    .help("Use nemotron-mini running on local Ollama to remove filler words like 'um' and 'uh' and fix minor grammar issues")
+
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .disabled(true)
                     .help("Coming soon")
