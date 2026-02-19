@@ -9,21 +9,35 @@ class KeyboardMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isKeyPressed = false
+    private var accessibilityTimer: Timer?
 
     private let appState = AppState.shared
 
     init() {}
 
     func start() {
-        // Check accessibility permissions silently - never prompt automatically
-        let trusted = AXIsProcessTrusted()
+        // Prompt for accessibility permissions if not yet granted
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(options)
 
         if !trusted {
-            print("Accessibility permissions required. Please grant access in System Settings > Privacy & Security > Accessibility")
-            // Don't auto-prompt - user can enable via Settings if needed
+            print("Accessibility permissions required — prompting user")
+            // Poll until the user grants permission
+            accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
+                if AXIsProcessTrusted() {
+                    timer.invalidate()
+                    self?.accessibilityTimer = nil
+                    print("Accessibility permission granted, starting keyboard monitor")
+                    self?.setupEventTap()
+                }
+            }
             return
         }
 
+        setupEventTap()
+    }
+
+    private func setupEventTap() {
         // Create event tap for key events
         let eventMask = (1 << CGEventType.flagsChanged.rawValue) |
                         (1 << CGEventType.keyDown.rawValue) |
@@ -61,6 +75,9 @@ class KeyboardMonitor {
     }
 
     func stop() {
+        accessibilityTimer?.invalidate()
+        accessibilityTimer = nil
+
         if let eventTap = eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
         }
@@ -90,10 +107,7 @@ class KeyboardMonitor {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
             // Handle Globe/Fn key (key code 63 / 0x3F)
-            // The Fn key doesn't have a specific flag, but we can detect it via flags changed
             if appState.shortcutKey == .globe || appState.shortcutKey == .fn {
-                // Check if this is the Fn key by looking at the event
-                // Fn key presses generate flagsChanged events with keycode 63
                 if keyCode == 63 {  // Fn key
                     let fnPressed = flags.contains(.maskSecondaryFn)
 
@@ -108,6 +122,9 @@ class KeyboardMonitor {
                             self.onKeyUp?()
                         }
                     }
+
+                    // Consume the Globe/Fn event so macOS doesn't open emoji picker
+                    return nil
                 }
             }
 
