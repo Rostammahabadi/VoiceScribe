@@ -193,9 +193,12 @@ class TranscriptionHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
 def run_server(port: int = 8765):
     """Run the transcription server."""
-    server = HTTPServer(('127.0.0.1', port), TranscriptionHandler)
+    server = ReusableHTTPServer(('127.0.0.1', port), TranscriptionHandler)
     print(f"Transcription server running on http://127.0.0.1:{port}", flush=True)
 
     def signal_handler(sig, frame):
