@@ -129,6 +129,9 @@ struct ShortcutSettingsView: View {
         .onAppear {
             hasAccessibilityPermission = AXIsProcessTrusted()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasAccessibilityPermission = AXIsProcessTrusted()
+        }
     }
 
     private func openAccessibilitySettings() {
