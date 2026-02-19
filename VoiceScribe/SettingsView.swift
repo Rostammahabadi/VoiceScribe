@@ -135,8 +135,10 @@ struct ShortcutSettingsView: View {
     }
 
     private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        NSWorkspace.shared.open(url)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]
+        try? process.run()
     }
 }
 

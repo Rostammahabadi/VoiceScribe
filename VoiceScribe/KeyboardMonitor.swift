@@ -16,13 +16,11 @@ class KeyboardMonitor {
     init() {}
 
     func start() {
-        // Prompt for accessibility permissions if not yet granted
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
-
-        if !trusted {
-            print("Accessibility permissions required — prompting user")
-            // Poll until the user grants permission
+        if AXIsProcessTrusted() {
+            setupEventTap()
+        } else {
+            print("Accessibility permissions required — waiting for user to grant access")
+            // Poll until the user grants permission via System Settings
             accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
                 if AXIsProcessTrusted() {
                     timer.invalidate()
@@ -31,10 +29,7 @@ class KeyboardMonitor {
                     self?.setupEventTap()
                 }
             }
-            return
         }
-
-        setupEventTap()
     }
 
     private func setupEventTap() {
