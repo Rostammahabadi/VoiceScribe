@@ -17,8 +17,12 @@ INSTALLATION
 ────────────────────────────────────────────────────────────────────
 1. Open Terminal (Applications → Utilities → Terminal)
 
-2. Drag install.sh into the Terminal window and press Enter
-   (or run: bash /path/to/VoiceScribe/install.sh)
+2. Type the following into Terminal (do NOT press Enter yet):
+      bash
+   (that's the word "bash" followed by a space)
+
+3. Drag the install.sh file from this folder into the Terminal
+   window. The full path will appear after "bash ". Now press Enter.
 
    The installer will automatically:
    • Check that your Mac is compatible
@@ -27,9 +31,9 @@ INSTALLATION
    • Copy VoiceScribe.app to /Applications
    • Verify everything works
 
-3. Open VoiceScribe from Applications (or Spotlight)
+4. Open VoiceScribe from Applications (or Spotlight)
 
-4. Grant permissions when prompted:
+5. Grant permissions when prompted:
    • Accessibility (required for keyboard shortcuts)
    • Microphone (required for recording)
 
