@@ -27,46 +27,28 @@ Built with Swift and [MLX Audio](https://github.com/Blaizzy/mlx-audio), optimize
 
 ## Installation
 
-### Option 1: Download Release
+### Download Release
 
 1. Download the latest release from [Releases](../../releases)
-2. Unzip and run the installer:
+2. Unzip, open Terminal, type `bash `, drag `install.sh` into Terminal, and press Enter
+
+That's it. The installer checks your system, sets up a Python virtual environment at `~/.voicescribe/`, installs dependencies, copies the app to `/Applications`, and launches it.
+
+### Build from Source
+
+1. **Clone and build**
    ```bash
+   git clone https://github.com/Rostammahabadi/VoiceScribe.git
    cd VoiceScribe
-   chmod +x install.sh
-   ./install.sh
+   xcodebuild -project VoiceScribe.xcodeproj -scheme VoiceScribe -configuration Release -derivedDataPath build
    ```
-3. Move `VoiceScribe.app` to your Applications folder
-4. Open VoiceScribe and grant permissions when prompted
 
-### Option 2: Build from Source
-
-1. **Clone the repository**
+2. **Run the installer** (sets up Python venv + dependencies)
    ```bash
-   git clone https://github.com/yourusername/VoiceScribe.git
-   cd VoiceScribe
+   bash dist/VoiceScribe/install.sh
    ```
 
-2. **Install Python dependencies**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install mlx-audio
-   ```
-
-3. **Build the app**
-   ```bash
-   xcodebuild -project VoiceScribe.xcodeproj -scheme VoiceScribe -configuration Release build SYMROOT=build
-   ```
-
-4. **Run**
-   ```bash
-   # Start the transcription server
-   ./run_server.sh &
-
-   # Open the app
-   open build/Release/VoiceScribe.app
-   ```
+   The app manages the Python transcription server automatically — no need to start it manually.
 
 ## Usage
 
@@ -133,27 +115,27 @@ VoiceScribe consists of two components:
 ## Troubleshooting
 
 ### "Accessibility permission required"
-Go to **System Settings → Privacy & Security → Accessibility** and enable VoiceScribe.
+Go to **System Settings → Privacy & Security → Accessibility** and enable VoiceScribe. The app will detect the change automatically.
+
+### Globe (Fn) key doesn't start recording
+1. Check Accessibility permission is granted (see above)
+2. Make sure server status shows "Ready" in Settings → General
+3. If the Globe key opens the emoji picker, go to **System Settings → Keyboard → "Press Globe key to" → "Do Nothing"**
+4. Try switching to Right Option in Settings → Shortcuts
+
+### Microphone permission
+Go to **System Settings → Privacy & Security → Microphone** and enable VoiceScribe.
 
 ### "Model loading..." takes forever
-The first launch downloads a ~1.2GB model. Ensure you have a stable internet connection. Subsequent launches use the cached model.
-
-### Keyboard shortcut not working
-1. Check that Accessibility permission is granted
-2. Try a different shortcut key in Settings
-3. Restart the app
-
-### No transcription / Empty result
-1. Check that Microphone permission is granted
-2. Verify your microphone is working in System Settings → Sound
-3. Speak clearly and close to the microphone
+The first launch downloads a ~1.2GB model. Subsequent launches use the cached model.
 
 ### Server not starting
-1. Ensure Python 3.9+ is installed: `python3 --version`
-2. Ensure mlx-audio is installed: `pip3 show mlx-audio`
-3. Check server logs: `tail -f /tmp/voicescribe_server.log`
+Re-run the installer: `bash install.sh`. To verify dependencies manually:
+```bash
+~/.voicescribe/venv/bin/python3 -c "import mlx_audio; print('OK')"
+```
 
-### App crashes on Intel Mac
+### Intel Mac
 VoiceScribe requires Apple Silicon. MLX does not support Intel processors.
 
 ## Privacy
