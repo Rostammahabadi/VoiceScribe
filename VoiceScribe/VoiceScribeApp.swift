@@ -67,10 +67,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         keyboardMonitor?.stop()
-        // Gracefully shut down Python process
+        // Shut down Python process with a timeout — don't block forever
         if let process = pythonProcess, process.isRunning {
             process.terminate()
-            process.waitUntilExit()
+            // Give it 2 seconds to exit gracefully, then force kill
+            let deadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if process.isRunning {
+                process.interrupt() // SIGINT
+                Thread.sleep(forTimeInterval: 0.5)
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+            }
         }
     }
 
