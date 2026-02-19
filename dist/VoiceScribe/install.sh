@@ -233,12 +233,6 @@ else
 fi
 
 echo ""
-echo "Next steps:"
-echo "  1. Open VoiceScribe from Applications (or Spotlight)"
-echo "  2. Grant Accessibility permission when prompted"
-echo "     (System Settings → Privacy & Security → Accessibility)"
-echo "  3. Grant Microphone permission when prompted"
-echo ""
 echo "Usage:"
 echo "  • Hold the Globe (Fn) key and speak"
 echo "  • Release to transcribe and paste"
@@ -246,3 +240,12 @@ echo ""
 echo "The first launch will download the Parakeet AI model (~1.2GB)."
 echo "Subsequent launches will be much faster."
 echo ""
+
+# Launch the app
+if [[ -d "$DEST_APP" ]]; then
+    echo "Launching VoiceScribe..."
+    open "$DEST_APP"
+    echo ""
+    echo "Grant Accessibility and Microphone permissions when prompted."
+    echo ""
+fi
