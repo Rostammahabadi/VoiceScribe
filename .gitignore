@@ -18,8 +18,9 @@ __pycache__/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Python packaging
-dist/
+# Python packaging (exclude dist/ contents except our VoiceScribe distribution)
+dist/*
+!dist/VoiceScribe/
 build/
 eggs/
 parts/

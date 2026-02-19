@@ -132,7 +132,7 @@ struct ShortcutSettingsView: View {
     }
 
     private func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
         NSWorkspace.shared.open(url)
     }
 }
@@ -198,8 +198,10 @@ struct AboutView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Link("MLX Audio", destination: URL(string: "https://github.com/Blaizzy/mlx-audio")!)
-                    .font(.caption)
+                if let mlxURL = URL(string: "https://github.com/Blaizzy/mlx-audio") {
+                    Link("MLX Audio", destination: mlxURL)
+                        .font(.caption)
+                }
             }
         }
         .padding()

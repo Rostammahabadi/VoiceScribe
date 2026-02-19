@@ -14,10 +14,10 @@ struct VoiceScribeApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    static var shared: AppDelegate!
+    static var shared: AppDelegate?
 
-    var statusBarItem: NSStatusItem!
-    var popover: NSPopover!
+    var statusBarItem: NSStatusItem?
+    var popover: NSPopover?
     var appState = AppState.shared
     var keyboardMonitor: KeyboardMonitor?
     var audioRecorder: AudioRecorder?
@@ -66,28 +66,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Clean up Python process
-        pythonProcess?.terminate()
         keyboardMonitor?.stop()
+        // Gracefully shut down Python process
+        if let process = pythonProcess, process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
     }
 
     private func setupStatusBar() {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        if let button = statusBarItem.button {
+        if let button = statusBarItem?.button {
             button.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "VoiceScribe")
             button.action = #selector(togglePopover)
             button.target = self
         }
 
         // Create popover
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 400)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
+        let newPopover = NSPopover()
+        newPopover.contentSize = NSSize(width: 320, height: 400)
+        newPopover.behavior = .transient
+        newPopover.contentViewController = NSHostingController(
             rootView: MenuBarView()
                 .environmentObject(appState)
         )
+        popover = newPopover
     }
 
     private func setupServices() {
@@ -130,8 +134,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let process = Process()
         pythonProcess = process
 
-        // Find Python executable
+        // Find Python executable — check venv first, then Homebrew, then system
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         let pythonPaths = [
+            "\(home)/.voicescribe/venv/bin/python3",
             "/opt/homebrew/bin/python3",
             "/usr/local/bin/python3",
             "/usr/bin/python3"
@@ -152,21 +158,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Get the script path - check multiple locations
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let bundleScriptPath = resourcePath + "/transcription_server.py"
-        let siblingScriptPath = Bundle.main.bundlePath
-            .replacingOccurrences(of: "/VoiceScribe.app", with: "")
-            + "/transcription_server.py"
-        let devScriptPath = FileManager.default.currentDirectoryPath + "/transcription_server.py"
+        // Get the script path - check multiple locations using URL-based APIs
+        let scriptName = "transcription_server.py"
+        let installedScriptURL = URL(fileURLWithPath: "\(home)/.voicescribe/\(scriptName)")
+        let bundleScriptURL = Bundle.main.resourceURL?.appendingPathComponent(scriptName)
+        let siblingScriptURL = URL(fileURLWithPath: Bundle.main.bundlePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent(scriptName)
+        let devScriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(scriptName)
 
-        var finalScriptPath = devScriptPath
-        if FileManager.default.fileExists(atPath: bundleScriptPath) {
-            finalScriptPath = bundleScriptPath
-        } else if FileManager.default.fileExists(atPath: siblingScriptPath) {
-            finalScriptPath = siblingScriptPath
+        let finalScriptURL: URL
+        if FileManager.default.fileExists(atPath: installedScriptURL.path) {
+            finalScriptURL = installedScriptURL
+        } else if let bundleURL = bundleScriptURL, FileManager.default.fileExists(atPath: bundleURL.path) {
+            finalScriptURL = bundleURL
+        } else if FileManager.default.fileExists(atPath: siblingScriptURL.path) {
+            finalScriptURL = siblingScriptURL
+        } else {
+            finalScriptURL = devScriptURL
         }
 
+        let finalScriptPath = finalScriptURL.path
+        print("Using Python: \(python)")
         print("Using Python script at: \(finalScriptPath)")
 
         process.executableURL = URL(fileURLWithPath: python)
@@ -205,35 +219,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func checkServerHealth() {
+    private func checkServerHealth(attempt: Int = 0, maxAttempts: Int = 5) {
         transcriptionService?.checkHealth { [weak self] isHealthy, modelLoaded in
             DispatchQueue.main.async {
                 if isHealthy {
                     self?.appState.serverStatus = modelLoaded ? .ready : .loadingModel
                     self?.appState.modelLoaded = modelLoaded
+                } else if attempt < maxAttempts {
+                    let delay = pow(2.0, Double(attempt)) // 1, 2, 4, 8, 16 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        self?.checkServerHealth(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    }
+                } else {
+                    self?.appState.serverStatus = .error("Server health check failed")
                 }
             }
         }
     }
 
     @objc func togglePopover() {
-        if let button = statusBarItem.button {
-            if popover.isShown {
-                closePopover()
-            } else {
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                NSApp.activate(ignoringOtherApps: true)
+        guard let button = statusBarItem?.button, let popover = popover else { return }
+        if popover.isShown {
+            closePopover()
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate(ignoringOtherApps: true)
 
-                // Monitor for clicks outside the popover to dismiss it
-                clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                    self?.closePopover()
-                }
+            // Monitor for clicks outside the popover to dismiss it
+            clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                self?.closePopover()
             }
         }
     }
 
     private func closePopover() {
-        popover.performClose(nil)
+        popover?.performClose(nil)
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor)
             clickMonitor = nil
@@ -327,7 +347,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusBarIcon(recording: Bool) {
         DispatchQueue.main.async {
-            if let button = self.statusBarItem.button {
+            if let button = self.statusBarItem?.button {
                 let symbolName = recording ? "waveform.circle.fill" : "waveform.circle"
                 button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "VoiceScribe")
                 button.image?.isTemplate = true
