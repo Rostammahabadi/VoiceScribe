@@ -1,29 +1,16 @@
 # VoiceScribe
 
-A native macOS menu bar app for lightning-fast speech-to-text transcription, powered by local AI. Hold a key, speak, release — your words appear instantly wherever your cursor is.
+A native macOS menu bar app for speech-to-text transcription, powered by local AI. Hold a key, speak, release — your words appear instantly wherever your cursor is.
 
-Built with Swift and [MLX Audio](https://github.com/Blaizzy/mlx-audio), optimized for Apple Silicon.
-
-## Features
-
-- **Push-to-Talk** — Hold the Globe (Fn) key to record, release to transcribe
-- **Instant Paste** — Transcribed text is automatically pasted at your cursor
-- **100% Local** — All processing happens on-device using Apple's MLX framework
-- **Menu Bar App** — Lives quietly in your menu bar, always ready
-- **Fast & Accurate** — Uses NVIDIA's Parakeet TDT model for high-quality English transcription
-- **Configurable** — Choose your microphone, shortcut key, and behavior
-
-## Demo
-
-<!-- Add a GIF or screenshot here -->
-![VoiceScribe Menu Bar](https://via.placeholder.com/600x400?text=Add+Screenshot)
+Built with Swift and [MLX Audio](https://github.com/Blaizzy/mlx-audio), optimized for Apple Silicon. All processing happens on-device.
 
 ## Requirements
 
-- **macOS 13.0** or later
-- **Apple Silicon** Mac (M1, M2, M3, or later)
-- **Python 3.9+** (for the transcription backend)
-- ~2GB disk space (for the AI model, downloaded on first run)
+- **Apple Silicon** Mac (M1, M2, M3, M4, or later)
+- **macOS 13.0+**
+- **Python 3.9+** (`python3 --version` to check; install with `brew install python3` if needed)
+- **Xcode Command Line Tools** (`xcode-select --install` if not already installed)
+- ~2GB free disk space (for the AI model, downloaded on first run)
 
 ## Installation
 
@@ -36,146 +23,158 @@ That's it. The installer checks your system, sets up a Python virtual environmen
 
 ### Build from Source
 
-1. **Clone and build**
-   ```bash
-   git clone https://github.com/Rostammahabadi/VoiceScribe.git
-   cd VoiceScribe
-   xcodebuild -project VoiceScribe.xcodeproj -scheme VoiceScribe -configuration Release -derivedDataPath build
-   ```
+```bash
+git clone https://github.com/Rostammahabadi/VoiceScribe.git
+cd VoiceScribe
+chmod +x setup.sh run.sh
+./setup.sh
+```
 
-2. **Run the installer** (sets up Python venv + dependencies)
-   ```bash
-   bash dist/VoiceScribe/install.sh
-   ```
+This single script will:
+1. Verify prerequisites (Apple Silicon, Python, Xcode tools)
+2. Create a Python virtual environment and install `mlx-audio`
+3. Build the app with `xcodebuild`
+4. Install `VoiceScribe.app` to `/Applications`
 
-   The app manages the Python transcription server automatically — no need to start it manually.
+When it finishes, launch with:
+
+```bash
+open /Applications/VoiceScribe.app
+```
+
+Or use the helper script (runs setup if needed, then launches):
+
+```bash
+./run.sh
+```
+
+## First Launch
+
+On first launch you must grant two permissions:
+
+1. **Accessibility** — Go to Settings > Shortcuts in the app and click "Grant Accessibility Permission". This opens System Settings where you toggle VoiceScribe **ON** in the Accessibility list.
+
+2. **Microphone** — Click "Allow" when prompted.
+
+The app will also download the Parakeet AI model (~1.2GB) on the first run. This takes 30-60 seconds depending on your connection. Subsequent launches use the cached model.
 
 ## Usage
 
-### Quick Start
+1. Look for the **waveform icon** in your menu bar
+2. Click in any text field where you want to type
+3. **Hold the Right Option key** and speak clearly
+4. **Release the key** — your speech is transcribed and pasted automatically
 
-1. **Launch VoiceScribe** — Look for the waveform icon in your menu bar
-2. **Click in any text field** where you want to type
-3. **Hold the Globe (Fn) key** and speak clearly
-4. **Release the key** — Your speech is transcribed and pasted automatically
-
-### First Launch
-
-On first launch, VoiceScribe will:
-1. Request **Accessibility** permission (for keyboard shortcuts and auto-paste)
-2. Request **Microphone** permission (for recording)
-3. Download the Parakeet AI model (~1.2GB, cached for future use)
-
-### Menu Bar Options
-
-Click the menu bar icon to access:
-- **Status** — See if the transcription server is ready
-- **Last Transcription** — View and copy your most recent transcription
-- **Input Device** — Select your preferred microphone
-- **Settings** — Configure shortcuts and behavior
+The default shortcut is **Right Option** (right side of keyboard, next to Right Command). You can change this in Settings.
 
 ## Settings
 
-| Setting | Description |
-|---------|-------------|
-| **Push-to-talk key** | Globe (Fn), Right Option, or Right Command |
-| **Input Device** | Select from available microphones |
-| **Auto-copy** | Automatically copy transcription to clipboard |
-| **Auto-type** | Automatically paste transcription at cursor |
+Click the menu bar icon, then "Settings" to configure:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Push-to-talk key** | Right Option, Right Command, Globe/Fn | Right Option |
+| **Input device** | Select from available microphones | System default |
+| **Auto-copy** | Copy transcription to clipboard | On |
+| **Auto-type** | Paste transcription at cursor | On |
+| **Text cleanup** | Remove filler words via local Ollama | On |
+
+> **Globe/Fn key note:** If you select Globe or Fn as your shortcut, you must also change a system setting: **System Settings > Keyboard > "Press Globe key to" > "Do Nothing"**. Otherwise macOS intercepts the key for Emoji/Input Source and VoiceScribe never sees it.
 
 ## Architecture
 
-VoiceScribe consists of two components:
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    VoiceScribe.app                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
-│  │   Menu Bar  │  │   Audio     │  │    Keyboard     │  │
-│  │     UI      │  │  Recorder   │  │    Monitor      │  │
-│  └─────────────┘  └─────────────┘  └─────────────────┘  │
-│                          │                               │
-│                          ▼                               │
-│                   HTTP POST /transcribe                  │
-└─────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│              transcription_server.py                     │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │              MLX Audio + Parakeet               │    │
-│  │         (Local speech-to-text inference)        │    │
-│  └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
+VoiceScribe.app (Swift/SwiftUI)
+  ├── Menu Bar UI
+  ├── Keyboard Monitor (global push-to-talk via CGEvent tap)
+  ├── Audio Recorder (AVAudioEngine)
+  └── HTTP client ──POST /transcribe──► localhost:8765
+                                              │
+                                    transcription_server.py
+                                    (bundled inside the .app)
+                                              │
+                                      MLX Audio + Parakeet TDT 0.6B
+                                      (on-device speech-to-text)
 ```
 
-- **Swift App**: Handles UI, audio recording, keyboard shortcuts, and clipboard
-- **Python Server**: Runs the Parakeet model via MLX Audio on `localhost:8765`
+The Python transcription server is bundled inside the app and launched automatically. No separate server setup is needed.
 
 ## Troubleshooting
 
 ### "Accessibility permission required"
-Go to **System Settings → Privacy & Security → Accessibility** and enable VoiceScribe. The app will detect the change automatically.
+Go to **System Settings > Privacy & Security > Accessibility** and enable VoiceScribe. The app will detect the change automatically.
 
-### Globe (Fn) key doesn't start recording
-1. Check Accessibility permission is granted (see above)
-2. Make sure server status shows "Ready" in Settings → General
-3. If the Globe key opens the emoji picker, go to **System Settings → Keyboard → "Press Globe key to" → "Do Nothing"**
-4. Try switching to Right Option in Settings → Shortcuts
+### Keyboard shortcut not working
+1. Verify VoiceScribe is listed and **enabled** in System Settings > Privacy & Security > Accessibility
+2. If using Globe/Fn key: set System Settings > Keyboard > "Press Globe key to" > "Do Nothing"
+3. Click the menu bar icon — it should say "Hold Right Option to record". If it says "Keyboard monitor inactive", Accessibility permission is missing.
+4. Try Right Option or Right Command as the shortcut (these work without extra configuration)
 
 ### Microphone permission
-Go to **System Settings → Privacy & Security → Microphone** and enable VoiceScribe.
+Go to **System Settings > Privacy & Security > Microphone** and enable VoiceScribe.
 
 ### "Model loading..." takes forever
 The first launch downloads a ~1.2GB model. Subsequent launches use the cached model.
 
-### Server not starting
-Re-run the installer: `bash install.sh`. To verify dependencies manually:
-```bash
-~/.voicescribe/venv/bin/python3 -c "import mlx_audio; print('OK')"
-```
+### "Server not ready" / transcription not working
+1. Click the menu bar icon and check the server status indicator
+2. On first launch, wait for the model to finish downloading (~1.2GB)
+3. If the status shows an error, quit and relaunch the app
+4. Verify Python dependencies: `~/.voicescribe/venv/bin/python3 -c "import mlx_audio; print('OK')"`
+
+### App not appearing in menu bar
+VoiceScribe is a menu bar app — it has no dock icon. Look for the waveform icon in the top-right menu bar area.
+
+### 100% CPU usage
+Quit VoiceScribe, make sure no old `transcription_server.py` processes are running (`pkill -f transcription_server.py`), then relaunch.
 
 ### Intel Mac
 VoiceScribe requires Apple Silicon. MLX does not support Intel processors.
 
+### Rebuilding after code changes
+```bash
+./setup.sh
+```
+This rebuilds and reinstalls to `/Applications`. Or build manually:
+```bash
+xcodebuild -project VoiceScribe.xcodeproj -scheme VoiceScribe -configuration Release build SYMROOT=build
+rsync -a --delete build/Release/VoiceScribe.app/ /Applications/VoiceScribe.app/
+```
+Note: use `rsync`, not `cp -R` (which silently fails to overwrite an existing app bundle).
+
+## Development
+
+For development, you can run the transcription server standalone:
+
+```bash
+source venv/bin/activate
+python3 transcription_server.py
+```
+
+The server runs on `localhost:8765`. The app will connect to an already-running server if one exists.
+
 ## Privacy
 
-VoiceScribe processes all audio **locally on your device**:
+All audio is processed **locally on your device**:
 - No audio is sent to external servers
 - No transcriptions are stored or transmitted
 - No analytics or telemetry
 
-The only network requests are to download the AI model from Hugging Face on first launch.
+The only network request is to download the AI model from Hugging Face on first launch.
 
 ## Tech Stack
 
-- **Swift / SwiftUI** — Native macOS app
+- **Swift / SwiftUI** — Native macOS menu bar app
 - **MLX Audio** — Apple Silicon-optimized ML inference
 - **Parakeet TDT 0.6B** — NVIDIA's speech recognition model
-- **Python** — Transcription server backend
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- **Python** — Transcription server backend (bundled inside the app)
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [MLX Audio](https://github.com/Blaizzy/mlx-audio) by Prince Canuma — The ML framework powering transcription
-- [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b) by NVIDIA — The speech recognition model
-- [Apple MLX](https://github.com/ml-explore/mlx) — Machine learning on Apple Silicon
-
----
-
-<p align="center">
-  Made with ❤️ for the Mac
-</p>
+- [MLX Audio](https://github.com/Blaizzy/mlx-audio) by Prince Canuma
+- [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b) by NVIDIA
+- [Apple MLX](https://github.com/ml-explore/mlx)

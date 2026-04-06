@@ -45,7 +45,10 @@ class AppState: ObservableObject {
             }
         }
     }
-    @Published var shortcutKey: ShortcutKey = .globe {
+    @Published var keyboardMonitorActive: Bool = false
+    @Published var accessibilityDenied: Bool = false
+
+    @Published var shortcutKey: ShortcutKey = .rightOption {
         didSet {
             UserDefaults.standard.set(shortcutKey.rawValue, forKey: "shortcutKey")
         }
@@ -217,13 +220,14 @@ class AudioDeviceManager {
             status = AudioObjectGetPropertyDataSize(deviceID, &inputAddress, 0, nil, &configSize)
 
             if status == noErr && configSize > 0 {
-                let bufferListPtr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
-                defer { bufferListPtr.deallocate() }
+                let bufferListRawPtr = UnsafeMutableRawPointer.allocate(byteCount: Int(configSize), alignment: MemoryLayout<AudioBufferList>.alignment)
+                defer { bufferListRawPtr.deallocate() }
+
+                let bufferListPtr = bufferListRawPtr.bindMemory(to: AudioBufferList.self, capacity: 1)
 
                 status = AudioObjectGetPropertyData(deviceID, &inputAddress, 0, nil, &configSize, bufferListPtr)
 
                 if status == noErr {
-                    let bufferList = bufferListPtr.pointee
                     var inputChannels: UInt32 = 0
 
                     let buffers = UnsafeMutableAudioBufferListPointer(bufferListPtr)

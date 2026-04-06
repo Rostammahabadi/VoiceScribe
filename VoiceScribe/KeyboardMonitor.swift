@@ -9,26 +9,50 @@ class KeyboardMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isKeyPressed = false
-    private var accessibilityTimer: Timer?
+    private var pressedKeyCode: UInt16 = 0
 
     private let appState = AppState.shared
 
     init() {}
 
     func start() {
-        if AXIsProcessTrusted() {
-            setupEventTap()
-        } else {
-            print("Accessibility permissions required — waiting for user to grant access")
-            // Poll until the user grants permission via System Settings
-            accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
-                if AXIsProcessTrusted() {
-                    timer.invalidate()
-                    self?.accessibilityTimer = nil
-                    print("Accessibility permission granted, starting keyboard monitor")
-                    self?.setupEventTap()
-                }
+        // Check accessibility permissions without prompting —
+        // the user can grant via Settings > Shortcuts when ready.
+        let trusted = AXIsProcessTrusted()
+
+        if !trusted {
+            print("Accessibility permissions not granted. User can enable from Settings.")
+            DispatchQueue.main.async {
+                self.appState.accessibilityDenied = true
             }
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.appState.accessibilityDenied = false
+        }
+        setupEventTap()
+    }
+
+    /// Request accessibility with the system prompt (called explicitly by user action only)
+    func requestAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        AXIsProcessTrustedWithOptions(options)
+
+        // Poll until permission is granted (background, no re-prompting)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            for _ in 0..<120 {
+                if AXIsProcessTrusted() {
+                    print("Accessibility permission granted!")
+                    DispatchQueue.main.async {
+                        self?.appState.accessibilityDenied = false
+                        self?.setupEventTap()
+                    }
+                    return
+                }
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+            print("Accessibility permission polling timed out.")
         }
     }
 
@@ -66,13 +90,13 @@ class KeyboardMonitor {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             CGEvent.tapEnable(tap: eventTap, enable: true)
             print("Keyboard monitor started")
+            DispatchQueue.main.async {
+                self.appState.keyboardMonitorActive = true
+            }
         }
     }
 
     func stop() {
-        accessibilityTimer?.invalidate()
-        accessibilityTimer = nil
-
         if let eventTap = eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
         }
@@ -99,7 +123,34 @@ class KeyboardMonitor {
         // Check for flags changed (modifier keys)
         if type == .flagsChanged {
             let flags = event.flags
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+
+            // First: handle release of whatever key started the press (regardless of current setting).
+            // This prevents isKeyPressed from getting stuck if the shortcut key is changed mid-press.
+            if isKeyPressed && keyCode == pressedKeyCode {
+                var keyReleased = false
+                switch keyCode {
+                case 63: // Fn
+                    keyReleased = !flags.contains(.maskSecondaryFn)
+                case 61: // Right Option
+                    keyReleased = !flags.contains(.maskAlternate)
+                case 54: // Right Command
+                    keyReleased = !flags.contains(.maskCommand)
+                default:
+                    break
+                }
+
+                if keyReleased {
+                    isKeyPressed = false
+                    pressedKeyCode = 0
+                    DispatchQueue.main.async {
+                        self.onKeyUp?()
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+            }
+
+            // Then: handle new key presses based on current shortcut setting
 
             // Handle Globe/Fn key (key code 63 / 0x3F)
             if appState.shortcutKey == .globe || appState.shortcutKey == .fn {
@@ -108,13 +159,9 @@ class KeyboardMonitor {
 
                     if fnPressed && !isKeyPressed {
                         isKeyPressed = true
+                        pressedKeyCode = keyCode
                         DispatchQueue.main.async {
                             self.onKeyDown?()
-                        }
-                    } else if !fnPressed && isKeyPressed {
-                        isKeyPressed = false
-                        DispatchQueue.main.async {
-                            self.onKeyUp?()
                         }
                     }
 
@@ -130,13 +177,9 @@ class KeyboardMonitor {
 
                     if optionPressed && !isKeyPressed {
                         isKeyPressed = true
+                        pressedKeyCode = keyCode
                         DispatchQueue.main.async {
                             self.onKeyDown?()
-                        }
-                    } else if !optionPressed && isKeyPressed {
-                        isKeyPressed = false
-                        DispatchQueue.main.async {
-                            self.onKeyUp?()
                         }
                     }
                 }
@@ -149,13 +192,9 @@ class KeyboardMonitor {
 
                     if cmdPressed && !isKeyPressed {
                         isKeyPressed = true
+                        pressedKeyCode = keyCode
                         DispatchQueue.main.async {
                             self.onKeyDown?()
-                        }
-                    } else if !cmdPressed && isKeyPressed {
-                        isKeyPressed = false
-                        DispatchQueue.main.async {
-                            self.onKeyUp?()
                         }
                     }
                 }

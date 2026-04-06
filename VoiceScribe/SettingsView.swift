@@ -91,6 +91,16 @@ struct ShortcutSettingsView: View {
                 Text("Hold the selected key to start recording. Release to stop and transcribe.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                if appState.shortcutKey == .globe || appState.shortcutKey == .fn {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Globe/Fn key requires: System Settings \u{2192} Keyboard \u{2192} set \"Press \u{1F310} key to\" \u{2192} \"Do Nothing\". Otherwise macOS intercepts the key.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
             }
 
             // Only show if accessibility permission is missing
@@ -108,8 +118,8 @@ struct ShortcutSettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                        Button("Open Accessibility Settings") {
-                            openAccessibilitySettings()
+                        Button("Grant Accessibility Permission") {
+                            AppDelegate.shared?.keyboardMonitor?.requestAccessibility()
                         }
                     }
                 }
@@ -129,16 +139,9 @@ struct ShortcutSettingsView: View {
         .onAppear {
             hasAccessibilityPermission = AXIsProcessTrusted()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            hasAccessibilityPermission = AXIsProcessTrusted()
+        .onReceive(appState.$accessibilityDenied) { denied in
+            hasAccessibilityPermission = !denied && AXIsProcessTrusted()
         }
-    }
-
-    private func openAccessibilitySettings() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]
-        try? process.run()
     }
 }
 

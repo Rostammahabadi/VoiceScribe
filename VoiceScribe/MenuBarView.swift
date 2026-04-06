@@ -214,14 +214,20 @@ struct ActionsView: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // Shortcut hint
+            // Shortcut hint with keyboard monitor status
             HStack {
                 Image(systemName: "keyboard")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(appState.keyboardMonitorActive ? .secondary : .red)
 
-                Text("Hold \(appState.shortcutKey.displayName) to record")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if appState.keyboardMonitorActive {
+                    Text("Hold \(appState.shortcutKey.displayName) to record")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Keyboard monitor inactive — grant Accessibility permission")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
 
                 Spacer()
             }

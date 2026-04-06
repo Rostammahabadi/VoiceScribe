@@ -81,6 +81,11 @@ class AudioRecorder: NSObject {
     }
 
     func startRecording(deviceID: AudioDeviceID? = nil) {
+        // Apply selected input device before starting engine
+        if let deviceID = deviceID {
+            setInputDevice(deviceID)
+        }
+
         if !engineReady {
             prepareEngine()
         }

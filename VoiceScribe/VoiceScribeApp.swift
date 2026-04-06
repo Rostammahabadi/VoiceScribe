@@ -32,6 +32,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide dock icon - we're a menu bar app
         NSApp.setActivationPolicy(.accessory)
 
+        // Prevent macOS from auto-terminating this background app
+        ProcessInfo.processInfo.disableSuddenTermination()
+        ProcessInfo.processInfo.disableAutomaticTermination("VoiceScribe is a persistent menu bar app")
+
         // Setup components
         setupStatusBar()
         setupServices()
@@ -132,10 +136,87 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let process = Process()
         pythonProcess = process
 
-        // Find Python executable — check venv first, then Homebrew, then system
+        // Get the script path - check multiple locations
+        let resourcePath = Bundle.main.resourcePath ?? ""
+        let bundleScriptPath = resourcePath + "/transcription_server.py"
+        let siblingScriptPath = Bundle.main.bundlePath
+            .replacingOccurrences(of: "/VoiceScribe.app", with: "")
+            + "/transcription_server.py"
+        let devScriptPath = FileManager.default.currentDirectoryPath + "/transcription_server.py"
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let pythonPaths = [
-            "\(home)/.voicescribe/venv/bin/python3",
+        let installedScriptPath = "\(home)/.voicescribe/transcription_server.py"
+
+        var finalScriptPath: String? = nil
+
+        // 1. Check installed location (~/.voicescribe/)
+        if FileManager.default.fileExists(atPath: installedScriptPath) {
+            finalScriptPath = installedScriptPath
+        }
+        // 2. Check inside the app bundle (distributed builds)
+        else if FileManager.default.fileExists(atPath: bundleScriptPath) {
+            finalScriptPath = bundleScriptPath
+        }
+        // 3. Check next to the .app (sibling)
+        else if FileManager.default.fileExists(atPath: siblingScriptPath) {
+            finalScriptPath = siblingScriptPath
+        }
+        // 4. Check CWD (running from terminal in project dir)
+        else if FileManager.default.fileExists(atPath: devScriptPath) {
+            finalScriptPath = devScriptPath
+        }
+        // 5. Walk up from the .app bundle to find project root
+        else {
+            var searchDir = URL(fileURLWithPath: Bundle.main.bundlePath).deletingLastPathComponent()
+            for _ in 0..<5 {
+                let candidate = searchDir.appendingPathComponent("transcription_server.py").path
+                if FileManager.default.fileExists(atPath: candidate) {
+                    finalScriptPath = candidate
+                    break
+                }
+                let parent = searchDir.deletingLastPathComponent()
+                if parent.path == searchDir.path { break }
+                searchDir = parent
+            }
+        }
+
+        guard let scriptPath = finalScriptPath else {
+            DispatchQueue.main.async {
+                self.appState.serverStatus = .error("transcription_server.py not found")
+            }
+            return
+        }
+
+        // Find Python executable — check venv locations, then system
+        var venvCandidates: [String] = []
+
+        // Installed venv
+        venvCandidates.append("\(home)/.voicescribe/venv/bin/python3")
+
+        // Venv next to the script
+        let scriptDir = URL(fileURLWithPath: scriptPath).deletingLastPathComponent().path
+        venvCandidates.append(scriptDir + "/venv/bin/python3")
+
+        // Walk up from bundle to find project root venv
+        var searchDir = URL(fileURLWithPath: Bundle.main.bundlePath).deletingLastPathComponent()
+        for _ in 0..<5 {
+            let candidate = searchDir.appendingPathComponent("venv/bin/python3").path
+            if !venvCandidates.contains(candidate) {
+                venvCandidates.append(candidate)
+            }
+            let parent = searchDir.deletingLastPathComponent()
+            if parent.path == searchDir.path { break }
+            searchDir = parent
+        }
+
+        // Common project locations
+        for projectName in ["VoiceScribe", "voicescribe"] {
+            venvCandidates.append(home + "/\(projectName)/venv/bin/python3")
+            venvCandidates.append(home + "/Projects/\(projectName)/venv/bin/python3")
+            venvCandidates.append(home + "/Developer/\(projectName)/venv/bin/python3")
+            venvCandidates.append(home + "/src/\(projectName)/venv/bin/python3")
+        }
+
+        let pythonPaths = venvCandidates + [
             "/opt/homebrew/bin/python3",
             "/usr/local/bin/python3",
             "/usr/bin/python3"
@@ -156,33 +237,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Get the script path - check multiple locations using URL-based APIs
-        let scriptName = "transcription_server.py"
-        let installedScriptURL = URL(fileURLWithPath: "\(home)/.voicescribe/\(scriptName)")
-        let bundleScriptURL = Bundle.main.resourceURL?.appendingPathComponent(scriptName)
-        let siblingScriptURL = URL(fileURLWithPath: Bundle.main.bundlePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent(scriptName)
-        let devScriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(scriptName)
-
-        let finalScriptURL: URL
-        if FileManager.default.fileExists(atPath: installedScriptURL.path) {
-            finalScriptURL = installedScriptURL
-        } else if let bundleURL = bundleScriptURL, FileManager.default.fileExists(atPath: bundleURL.path) {
-            finalScriptURL = bundleURL
-        } else if FileManager.default.fileExists(atPath: siblingScriptURL.path) {
-            finalScriptURL = siblingScriptURL
-        } else {
-            finalScriptURL = devScriptURL
-        }
-
-        let finalScriptPath = finalScriptURL.path
-        print("Using Python: \(python)")
-        print("Using Python script at: \(finalScriptPath)")
+        print("Using Python at: \(python)")
+        print("Using Python script at: \(scriptPath)")
 
         process.executableURL = URL(fileURLWithPath: python)
-        process.arguments = [finalScriptPath]
+        process.arguments = [scriptPath]
         process.environment = ProcessInfo.processInfo.environment
 
         let pipe = Pipe()
@@ -191,6 +250,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
+            guard !data.isEmpty else {
+                // EOF — Python process exited. Nil out handler to stop CPU spin.
+                handle.readabilityHandler = nil
+                return
+            }
             if let output = String(data: data, encoding: .utf8), !output.isEmpty {
                 print("[Python] \(output)")
 
@@ -206,9 +270,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try process.run()
 
-            // Wait a moment then check health
+            // Poll health until server is ready, then monitor periodically
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.checkServerHealth()
+                self?.startHealthCheckPolling()
             }
         } catch {
             DispatchQueue.main.async {
@@ -217,19 +281,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func checkServerHealth(attempt: Int = 0, maxAttempts: Int = 5) {
+    // Retry health check until server is ready (up to 2 minutes)
+    private func startHealthCheckPolling(attempt: Int = 0) {
+        guard attempt < 60 else {
+            DispatchQueue.main.async {
+                self.appState.serverStatus = .error("Server failed to start after 2 minutes")
+            }
+            return
+        }
+
         transcriptionService?.checkHealth { [weak self] isHealthy, modelLoaded in
             DispatchQueue.main.async {
                 if isHealthy {
                     self?.appState.serverStatus = modelLoaded ? .ready : .loadingModel
                     self?.appState.modelLoaded = modelLoaded
-                } else if attempt < maxAttempts {
-                    let delay = pow(2.0, Double(attempt)) // 1, 2, 4, 8, 16 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        self?.checkServerHealth(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    if modelLoaded {
+                        // Server ready — start periodic monitoring
+                        self?.startPeriodicHealthMonitoring()
+                    } else {
+                        // Model still loading, keep polling
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            self?.startHealthCheckPolling(attempt: attempt + 1)
+                        }
                     }
                 } else {
-                    self?.appState.serverStatus = .error("Server health check failed")
+                    // Server not yet reachable, retry
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        self?.startHealthCheckPolling(attempt: attempt + 1)
+                    }
+                }
+            }
+        }
+    }
+
+    // Periodic health monitoring after server is ready
+    private func startPeriodicHealthMonitoring() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            self?.transcriptionService?.checkHealth { isHealthy, modelLoaded in
+                DispatchQueue.main.async {
+                    if isHealthy {
+                        self?.appState.serverStatus = modelLoaded ? .ready : .loadingModel
+                        self?.appState.modelLoaded = modelLoaded
+                    } else {
+                        self?.appState.serverStatus = .error("Server not responding")
+                    }
+                    // Continue monitoring
+                    self?.startPeriodicHealthMonitoring()
                 }
             }
         }
@@ -288,53 +385,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 switch result {
                 case .success(let text):
                     self?.appState.lastTranscription = text
-                    // Copy to clipboard
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                    // Add to transcription history
+                    self?.appState.addTranscription(text)
+
+                    // Only copy to clipboard if autoCopy is enabled
+                    if self?.appState.autoCopyEnabled == true {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    }
 
                     // Type text if enabled
                     if self?.appState.autoTypeEnabled == true {
+                        if self?.appState.autoCopyEnabled != true {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(text, forType: .string)
+                        }
                         self?.typeText(text)
                     }
 
                 case .failure(let error):
                     self?.appState.lastTranscription = "Error: \(error.localizedDescription)"
                 }
+            }
 
-                // Clean up temp file
+            // Clean up temp file off the main thread
+            DispatchQueue.global(qos: .utility).async {
                 try? FileManager.default.removeItem(at: audioURL)
             }
         }
     }
 
     private func typeText(_ text: String) {
-        // Text is already on clipboard, simulate Cmd+V to paste using CGEvent
-        // Run on background thread with delay to ensure focus is restored
         DispatchQueue.global(qos: .userInitiated).async {
-            // Wait for any UI updates and focus restoration
             Thread.sleep(forTimeInterval: 0.15)
 
             let source = CGEventSource(stateID: .combinedSessionState)
             source?.localEventsSuppressionInterval = 0.0
 
-            // 'v' key code is 9
             let vKeyCode: CGKeyCode = 9
 
-            // Create key down event with Command modifier
             guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true) else {
                 print("Failed to create keyDown event")
                 return
             }
             keyDown.flags = [.maskCommand]
 
-            // Create key up event with Command modifier
             guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
                 print("Failed to create keyUp event")
                 return
             }
             keyUp.flags = [.maskCommand]
 
-            // Post events to the HID event tap (works globally)
             keyDown.post(tap: .cgAnnotatedSessionEventTap)
             Thread.sleep(forTimeInterval: 0.05)
             keyUp.post(tap: .cgAnnotatedSessionEventTap)

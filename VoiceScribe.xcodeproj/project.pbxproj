@@ -15,6 +15,7 @@
 		006 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106; };
 		007 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107; };
 		008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 201; };
+		009 /* transcription_server.py in Resources */ = {isa = PBXBuildFile; fileRef = 108; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		107 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		201 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		301 /* VoiceScribe.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoiceScribe.entitlements; sourceTree = "<group>"; };
+		108 /* transcription_server.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = transcription_server.py; sourceTree = SOURCE_ROOT; };
 		401 /* VoiceScribe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceScribe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -46,6 +48,7 @@
 			children = (
 				602 /* VoiceScribe */,
 				603 /* Products */,
+				108 /* transcription_server.py */,
 			);
 			sourceTree = "<group>";
 		};
@@ -132,6 +135,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				008 /* Assets.xcassets in Resources */,
+				009 /* transcription_server.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

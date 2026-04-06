@@ -21,7 +21,7 @@ model_lock = threading.Lock()
 model_loaded = False
 
 def load_parakeet_model():
-    """Load the Parakeet model on startup."""
+    """Load the Parakeet model on startup and warm up Metal shaders."""
     global model, model_loaded
     print("Loading Parakeet model...", flush=True)
     try:
@@ -31,6 +31,32 @@ def load_parakeet_model():
             model = loaded
             model_loaded = True
         print("Parakeet model loaded successfully!", flush=True)
+
+        # Warm up: run a tiny silent audio through the model to trigger
+        # Metal shader JIT compilation now instead of on the first real request.
+        print("Warming up inference (compiling Metal shaders)...", flush=True)
+        warmup_path = None
+        try:
+            import wave, struct
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                warmup_path = f.name
+                with wave.open(f, 'w') as w:
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(16000)
+                    w.writeframes(struct.pack('<' + 'h' * 8000, *([0] * 8000)))
+            with model_lock:
+                model.generate(warmup_path)
+            print("Warm-up complete — first transcription will be fast!", flush=True)
+        except Exception as e:
+            print(f"Warm-up failed (non-fatal): {e}", flush=True)
+        finally:
+            if warmup_path:
+                try:
+                    os.unlink(warmup_path)
+                except:
+                    pass
+
         return True
     except Exception as e:
         print(f"Error loading model: {e}", flush=True)
@@ -179,7 +205,21 @@ class TranscriptionHandler(BaseHTTPRequestHandler):
                 self.send_json_response({"error": "No path provided"}, 400)
                 return
 
-            result = transcribe_audio(data['path'])
+            file_path = data['path']
+
+            # Validate the path
+            if not os.path.isfile(file_path):
+                self.send_json_response({"error": "File not found"}, 404)
+                return
+
+            # Only allow audio file extensions
+            allowed_extensions = {'.wav', '.mp3', '.m4a', '.flac', '.ogg', '.aac'}
+            _, ext = os.path.splitext(file_path)
+            if ext.lower() not in allowed_extensions:
+                self.send_json_response({"error": "Unsupported file type"}, 400)
+                return
+
+            result = transcribe_audio(file_path)
             self.send_json_response(result)
 
         else:
@@ -212,11 +252,11 @@ def run_server(port: int = 8765):
     server.serve_forever()
 
 if __name__ == '__main__':
-    # Load model first
-    if load_parakeet_model():
-        # Then start server
-        port = int(os.environ.get('VOICESCRIBE_PORT', 8765))
-        run_server(port)
-    else:
-        print("Failed to load model. Exiting.", flush=True)
-        sys.exit(1)
+    port = int(os.environ.get('VOICESCRIBE_PORT', 8765))
+
+    # Start model loading in background thread
+    model_thread = threading.Thread(target=load_parakeet_model, daemon=True)
+    model_thread.start()
+
+    # Start server immediately (health endpoint will report model_loaded=False until ready)
+    run_server(port)
